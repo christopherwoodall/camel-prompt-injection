@@ -47,8 +47,12 @@ _supported_model_names = {
     "gpt-4o-mini-2024-07-18": "GPT-4",
     "gpt-4.1-2025-04-14": "ChatGPT",
     "gpt-4.1-nano-2025-04-14": "ChatGPT",
+    "gpt-oss-20b": "GPT-OSS",
 } | _oai_thinking_models_with_effort
 suffixes = ["", "+camel", "+camel+secpol", "+camel+secpol+strict"]
+
+# Update agentdojo MODEL_NAMES with supported models
+MODEL_NAMES.update({v: v for v in CAMEL_MODEL_NAMES.values()})
 
 CAMEL_MODEL_NAMES = {f"{model}{suffix}": name for model, name in _supported_model_names.items() for suffix in suffixes}
 
@@ -62,9 +66,6 @@ _SECURITY_POLICY_ENGINES: dict[str, type[AgentDojoSecurityPolicyEngine]] = {
 
 def _is_oai_reasoning_model(model: str) -> bool:
     return "o4" in model or "o3" in model or "o1" in model or "codex" in model
-
-
-MODEL_NAMES.update(CAMEL_MODEL_NAMES)
 
 
 class Sleep(agent_pipeline.BasePipelineElement):
@@ -126,7 +127,8 @@ def make_tools_pipeline(
     else:
         raise ValueError("Invalid model")
 
-    llm.name = model.split(":")[1]
+    model_id = model.split(":")[1]
+    llm.name = _supported_model_names.get(model_id, model_id)
 
     engine = _SECURITY_POLICY_ENGINES[suite]
 
@@ -159,19 +161,19 @@ def make_tools_pipeline(
             )
 
         if _is_oai_reasoning_model(model):
-            tools_pipeline.name = f"{model.split(':')[1]}-{reasoning_effort}"
+            tools_pipeline.name = f"{llm.name}-{reasoning_effort}"
         elif "anthropic" in model and (("3-7-sonnet" in model or "sonnet-4" in model) and thinking_budget_tokens):
-            tools_pipeline.name = f"{model.split(':')[1]}-{thinking_budget_tokens}"
+            tools_pipeline.name = f"{llm.name}-{thinking_budget_tokens}"
         else:
-            tools_pipeline.name = model.split(":")[1]
+            tools_pipeline.name = llm.name
         if ad_defense is not None:
             tools_pipeline.name += f"+{ad_defense}"
 
     elif replay_with_policies:
         if _is_oai_reasoning_model(model):
-            pipeline_name = f"{model.split(':')[1]}-{reasoning_effort}+camel"
+            pipeline_name = f"{llm.name}-{reasoning_effort}+camel"
         else:
-            pipeline_name = f"{model.split(':')[1]}+camel"
+            pipeline_name = f"{llm.name}+camel"
         tools_pipeline = agent_pipeline.AgentPipeline(
             [
                 agent_pipeline.InitQuery(),
@@ -181,11 +183,11 @@ def make_tools_pipeline(
         )
         # Used for logging
         if "openai" in model and _is_oai_reasoning_model(model):
-            tools_pipeline.name = f"{model.split(':')[1]}-{reasoning_effort}+camel+secpol"
+            tools_pipeline.name = f"{llm.name}-{reasoning_effort}+camel+secpol"
         elif "anthropic" in model and (("3-7-sonnet" in model or "sonnet-4" in model) and thinking_budget_tokens):
-            tools_pipeline.name = f"{model.split(':')[1]}-{thinking_budget_tokens}+camel+secpol"
+            tools_pipeline.name = f"{llm.name}-{thinking_budget_tokens}+camel+secpol"
         else:
-            tools_pipeline.name = f"{model.split(':')[1]}+camel+secpol"
+            tools_pipeline.name = f"{llm.name}+camel+secpol"
         if eval_mode == MetadataEvalMode.STRICT:
             tools_pipeline.name += "+strict"
     else:
@@ -203,13 +205,15 @@ def make_tools_pipeline(
         )
         # Used for logging
         if "openai" in model and _is_oai_reasoning_model(model):
-            tools_pipeline.name = f"{model.split(':')[1]}-{reasoning_effort}+camel"
+            tools_pipeline.name = f"{llm.name}-{reasoning_effort}"
         elif "anthropic" in model and (("3-7-sonnet" in model or "sonnet-4" in model) and thinking_budget_tokens):
-            tools_pipeline.name = f"{model.split(':')[1]}-{thinking_budget_tokens}+camel"
+            tools_pipeline.name = f"{llm.name}-{thinking_budget_tokens}"
         else:
-            tools_pipeline.name = f"{model.split(':')[1]}+camel"
+            tools_pipeline.name = llm.name
 
         if q_llm:
-            tools_pipeline.name += f"-q:{q_llm.split(':')[1]}"
+            q_llm_id = q_llm.split(":")[1]
+            q_llm_name = _supported_model_names.get(q_llm_id, q_llm_id)
+            tools_pipeline.name += f"-q:{q_llm_name}"
 
     return tools_pipeline
